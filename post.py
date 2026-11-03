@@ -99,6 +99,14 @@ def main():
     print(f"投稿します (id={post['id']}):\n{text}\n")
 
     if os.environ.get("DRY_RUN") == "1":
+        token = os.environ.get("THREADS_ACCESS_TOKEN")
+        if token:
+            r = requests.get(f"{API}/me", params={"fields": "username", "access_token": token}, timeout=30)
+            if r.ok:
+                print(f"✅ トークン確認OK：@{r.json().get('username')} に投稿できます")
+            else:
+                print(f"::error::トークンが使えません: {r.text}")
+                sys.exit(1)
         print("DRY_RUN のため実際には投稿していません")
         return
 
