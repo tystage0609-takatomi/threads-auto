@@ -53,6 +53,8 @@ def publish(text, token):
         data={"media_type": "TEXT", "text": text, "access_token": token},
         timeout=30,
     )
+    if not r.ok:
+        print(f"::error::Threads エラー（作成）: {r.status_code} {r.text}")
     r.raise_for_status()
     creation_id = r.json()["id"]
     time.sleep(5)
@@ -61,6 +63,8 @@ def publish(text, token):
         data={"creation_id": creation_id, "access_token": token},
         timeout=30,
     )
+    if not r.ok:
+        print(f"::error::Threads エラー（公開）: {r.status_code} {r.text}")
     r.raise_for_status()
     return r.json()["id"]
 
