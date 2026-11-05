@@ -2,7 +2,7 @@
 
 on:
   schedule:
-    - cron: "0 22 * * *"   # 毎日 7:00 JST（平日用）
+    - cron: "30 21 * * *"  # 毎日 6:30 JST（平日用）
     - cron: "0 0 * * *"    # 毎日 9:00 JST（土日祝用）
   workflow_dispatch:
     inputs:
@@ -33,7 +33,7 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             python post.py test
-          elif [ "${{ github.event.schedule }}" = "0 22 * * *" ]; then
+          elif [ "${{ github.event.schedule }}" = "30 21 * * *" ]; then
             python post.py weekday
           else
             python post.py weekend

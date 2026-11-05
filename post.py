@@ -1,12 +1,12 @@
 """Threads 自動投稿スクリプト
 
 posts.csv の「未投稿」の先頭1件を Threads に投稿し、投稿日時を記録する。
-GitHub Actions から1日2回（7:00 / 9:00 JST）呼ばれる。
-  - 平日（祝日以外）… 7:00 の回だけ投稿
+GitHub Actions から1日2回（6:30 / 9:00 JST）呼ばれる。
+  - 平日（祝日以外）… 6:30 の回だけ投稿
   - 土日祝         … 9:00 の回だけ投稿
 
 使い方:
-  python post.py weekday   # 7:00 の回
+  python post.py weekday   # 6:30 の回
   python post.py weekend   # 9:00 の回
   python post.py test      # 曜日に関係なく投稿（手動テスト用）
 環境変数:
@@ -76,7 +76,7 @@ def main():
     off = is_offday(today)
 
     if slot == "weekday" and off:
-        print(f"{today} は土日祝のため 7:00 の回はスキップ")
+        print(f"{today} は土日祝のため 6:30 の回はスキップ")
         return
     if slot == "weekend" and not off:
         print(f"{today} は平日のため 9:00 の回はスキップ")
