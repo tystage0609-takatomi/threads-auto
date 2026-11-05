@@ -69,11 +69,45 @@ def publish(text, token):
     return r.json()["id"]
 
 
+RECRUIT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "recruit.csv")
+RECRUIT_START = datetime(2026, 12, 1, tzinfo=JST).date()
+
+
+def recruit(now, force=False):
+    """週1回の指導員募集の投稿。recruit.csv の中で、いちばん前に投稿したものから順に回す。"""
+    today = now.date()
+    if today < RECRUIT_START and not force:
+        print(f"指導員募集の投稿は {RECRUIT_START} から開始のためスキップ")
+        return
+    with open(RECRUIT_PATH, encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f))
+    if any(r.get("posted_at", "").startswith(today.isoformat()) for r in rows) and not force:
+        print("本日は募集を投稿済みのためスキップ")
+        return
+    post = min(rows, key=lambda r: (r.get("posted_at") or "", int(r["id"])))
+    text = post["text"].strip()
+    print(f"指導員募集を投稿します (id={post['id']}):\n{text}\n")
+    if os.environ.get("DRY_RUN") == "1":
+        print("DRY_RUN のため実際には投稿していません")
+        return
+    thread_id = publish(text, os.environ["THREADS_ACCESS_TOKEN"])
+    post["posted_at"] = now.strftime("%Y-%m-%d %H:%M")
+    with open(RECRUIT_PATH, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=FIELDS)
+        w.writeheader()
+        w.writerows({k: r.get(k, "") for k in FIELDS} for r in rows)
+    print(f"投稿完了 thread_id={thread_id}")
+
+
 def main():
     slot = sys.argv[1] if len(sys.argv) > 1 else "test"
     now = datetime.now(JST)
     today = now.date()
     off = is_offday(today)
+
+    if slot in ("recruit", "recruit-test"):
+        recruit(now, force=(slot == "recruit-test"))
+        return
 
     if slot == "weekday" and off:
         print(f"{today} は土日祝のため 6:30 の回はスキップ")

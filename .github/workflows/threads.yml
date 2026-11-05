@@ -4,8 +4,14 @@ on:
   schedule:
     - cron: "30 21 * * *"  # 毎日 6:30 JST（平日用）
     - cron: "0 0 * * *"    # 毎日 9:00 JST（土日祝用）
+    - cron: "0 11 * * 3"   # 毎週水曜 20:00 JST（指導員募集・2026-12-02から）
   workflow_dispatch:
     inputs:
+      kind:
+        description: "投稿の種類（daily=毎日の投稿 / recruit=指導員募集）"
+        type: choice
+        options: [daily, recruit]
+        default: daily
       dry_run:
         description: "テスト（実際には投稿しない）"
         type: boolean
@@ -32,9 +38,15 @@ jobs:
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '1' || '0' }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            python post.py test
+            if [ "${{ inputs.kind }}" = "recruit" ]; then
+              python post.py recruit-test
+            else
+              python post.py test
+            fi
           elif [ "${{ github.event.schedule }}" = "30 21 * * *" ]; then
             python post.py weekday
+          elif [ "${{ github.event.schedule }}" = "0 11 * * 3" ]; then
+            python post.py recruit
           else
             python post.py weekend
           fi
@@ -43,5 +55,5 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
-          git add posts.csv
+          git add posts.csv recruit.csv
           git diff --cached --quiet || (git commit -m "投稿記録を更新" && git push)
