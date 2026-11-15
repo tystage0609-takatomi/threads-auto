@@ -2,7 +2,7 @@
 
 写真をいっぱいに出してゆっくりズーム、太い縁取りの文字、テンポよく切り替え。
 写真は reel_assets/photos/<テーマ>/ から、文章の言葉に合うものを選ぶ。
-最後は山田さんの写真で締める。BGM は reel_assets/bgm/（OpenTracks の商用OK・クレジット不要の曲）。
+最後はドライブプラスへの案内で締める（本人の写真・名前は使わない）。BGM は reel_assets/bgm/（OpenTracks の商用OK・クレジット不要の曲）。
 
 使い方:
   python make_reel.py <posts.csv の id> [出力ファイル.mp4]
@@ -80,7 +80,7 @@ def split_slides(text):
     for b in re.split(r"\n\s*\n", text.strip()):
         lines = []
         for ln in b.splitlines():
-            if "http" in ln:
+            if "http" in ln or "山田" in ln or "代表指導員" in ln:
                 continue
             c = clean_line(ln)
             if c in ("詳しくはこちら", "詳しくはnoteで", "→", ""):
@@ -331,8 +331,9 @@ def build_scenes(text, rnd):
             dur = scene_seconds(s)
         scenes.append(Scene(ph, ovs, dur, zoom_in=(i % 2 == 0)))
 
-    # 締め：山田さんの写真
-    end_photo = os.path.join(ASSETS, "end", "yamada.jpg")
+    # 締め：ドライブプラスへの案内（人物の写真・名前は使わない）
+    end_pool = [p for p in list_photos("lesson") + list_photos("road") if p not in photos]
+    end_photo = rnd.choice(end_pool)
     ovs = [(brand, 50, 150, 0)]
     t1 = text_block(["運転の不安、", "プロといっしょに", "解消しませんか？"], 900, (84, 76), 500)
     ovs.append((t1, 0, 330, 0.1))
@@ -342,7 +343,7 @@ def build_scenes(text, rnd):
     ovs.append((t3, 0, 1290, 0.7))
     btn = label("プロフィールのリンクから ▶", size=46, bg=YELLOW)
     ovs.append((btn, (W - btn.width) / 2, 1480, 1.0))
-    scenes.append(Scene(end_photo, ovs, 4.2, zoom_in=True, focus_x=0.29))
+    scenes.append(Scene(end_photo, ovs, 4.2, zoom_in=True))
     return scenes
 
 
