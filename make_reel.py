@@ -1,66 +1,71 @@
 """Threads の投稿文から、インスタのリール用の縦長動画（1080x1920）を作る。
 
+写真をいっぱいに出してゆっくりズーム、太い縁取りの文字、テンポよく切り替え。
+写真は reel_assets/photos/<テーマ>/ から、文章の言葉に合うものを選ぶ。
+最後は山田さんの写真で締める。BGM は reel_assets/bgm/（OpenTracks の商用OK・クレジット不要の曲）。
+
 使い方:
   python make_reel.py <posts.csv の id> [出力ファイル.mp4]
-文章を空行で区切ってスライドにし、最後にドライブプラスの案内スライドを付ける。
-BGM はプログラムで合成した音なので、著作権の心配はない。
 """
 
 import csv
-import math
+import json
 import os
+import random
 import re
 import shutil
-import struct
 import subprocess
 import sys
-import tempfile
-import wave
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+ASSETS = os.path.join(HERE, "reel_assets")
 W, H = 1080, 1920
 FPS = 30
-FADE = 0.3
+XFADE = 0.25  # 場面の切り替え（秒）
+POP = 0.25    # 文字が出るときの動き（秒）
 
-# 色
-BG_TOP = (232, 244, 253)
-BG_BOTTOM = (255, 255, 255)
-NAVY = (20, 50, 100)
-ACCENT = (0, 120, 200)
-TEXT = (30, 30, 40)
+YELLOW = (255, 214, 0)
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
 
-FONT_CANDIDATES = [
-    # Windows
-    r"C:\Windows\Fonts\meiryob.ttc",
-    r"C:\Windows\Fonts\YuGothB.ttc",
-    # Ubuntu（GitHub Actions で fonts-noto-cjk を入れる）
-    "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
-    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+# 文章の言葉 → 写真のテーマ
+THEMES = [
+    ("drink", r"飲酒|お酒|忘年会|飲ん|飲み会|呼気"),
+    ("parking", r"駐車|バック|車庫|切り返"),
+    ("mirror", r"ミラー|後方|死角|目視|車線変更|振り返"),
+    ("rain", r"雨|雪|霧|ワイパー|凍結"),
+    ("night", r"夜|ライト|暗い|夕方"),
+    ("highway", r"高速|合流|インター|本線"),
+    ("crosswalk", r"横断|歩行者|信号|交差点|右折|左折|一時停止"),
+    ("meter", r"ブレーキ|アクセル|スピード|速度|km|キロ"),
+    ("wheel", r"ハンドル|運転席|姿勢|シート|握"),
+    ("keys", r"久しぶり|ペーパードライバー|何年も|はじめ|初めて|免許"),
+    ("lesson", r"講習|指導員|教習|練習|プロ"),
+    ("cone", r"コツ|ポイント|注意"),
+    ("city", r"道|街|大阪|兵庫|狭い|住宅"),
 ]
+DEFAULT_THEMES = ["city", "road", "wheel", "interior", "crosswalk"]
 
 
-def font(size):
-    for p in FONT_CANDIDATES:
-        if os.path.exists(p):
-            return ImageFont.truetype(p, size)
-    raise RuntimeError("日本語フォントが見つかりません")
+# ---------- 文字 ----------
+
+FONT_PATH = os.path.join(ASSETS, "fonts", "NotoSansJP.ttf")
+_font_cache = {}
 
 
-def ffmpeg_exe():
-    exe = shutil.which("ffmpeg")
-    if exe:
-        return exe
-    import imageio_ffmpeg
-    return imageio_ffmpeg.get_ffmpeg_exe()
+def font(size, weight="Black"):
+    key = (size, weight)
+    if key not in _font_cache:
+        f = ImageFont.truetype(FONT_PATH, size)
+        f.set_variation_by_name(weight)
+        _font_cache[key] = f
+    return _font_cache[key]
 
 
-# 絵文字はフォントで出ないので、記号に置きかえるか消す
-EMOJI_MAP = {"✅": "✔", "⚠️": "！", "⚠": "！", "❌": "×", "⭕": "○", "👉": "→", "▶": "→"}
-EMOJI_RE = re.compile(
-    "[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D\u20E3]"
-)
+EMOJI_MAP = {"✅": "", "⚠️": "", "⚠": "", "❌": "×", "⭕": "○", "👉": "", "▶": "", "→": "→"}
+EMOJI_RE = re.compile("[\U0001F000-\U0001FAFF☀-➿⬀-⯿️‍⃣]")
 
 
 def clean_line(line):
@@ -70,36 +75,69 @@ def clean_line(line):
 
 
 def split_slides(text):
-    """空行で区切ってスライドにする。リンクの行は消す（インスタの本文ではリンクを押せないため）。"""
-    blocks = re.split(r"\n\s*\n", text.strip())
+    """空行で区切って場面にする。リンクの行は消す。"""
     slides = []
-    for b in blocks:
+    for b in re.split(r"\n\s*\n", text.strip()):
         lines = []
         for ln in b.splitlines():
             if "http" in ln:
                 continue
             c = clean_line(ln)
-            if c in ("詳しくはこちら", "詳しくはnoteで", "→"):
+            if c in ("詳しくはこちら", "詳しくはnoteで", "→", ""):
                 continue
-            if c:
-                lines.append(c)
+            lines.append(c)
         if lines:
             slides.append(lines)
-    # 短いブロックは次とまとめる（1枚に最大7行）
     merged = []
     for s in slides:
-        if merged and len(merged[-1]) + len(s) <= 5:
-            merged[-1] = merged[-1] + [""] + s
+        if merged and len(merged[-1]) + len(s) <= 4 and len(merged) > 1:
+            merged[-1] = merged[-1] + s
         else:
             merged.append(s)
     return merged
 
 
+KINSOKU = "。、，．」』）！？ーっゃゅょァィゥェォッャュョ"
+
+
+BREAK_AFTER = "はがをにでともの、。」）？！やへて・："
+
+
 def wrap(draw, line, fnt, maxw):
+    """言葉の切れ目（は・が・を・に など）で、なるべく同じ長さに分ける"""
+    if draw.textlength(line, font=fnt) <= maxw:
+        return [line]
+    best = None
+    for n in (2, 3, 4):
+        # n 行に分ける：切れ目の候補から、各行が収まり長さがそろう分け方を探す
+        cands = [
+            i + 1 for i, ch in enumerate(line[:-1])
+            if (ch in BREAK_AFTER or line[max(0, i - 1):i + 1] == "から") and line[i + 1] not in KINSOKU
+        ]
+        target = len(line) / n
+        cuts, start = [], 0
+        for k in range(1, n):
+            ideal = target * k
+            ok = [c for c in cands if c > start and draw.textlength(line[start:c], font=fnt) <= maxw]
+            if not ok:
+                break
+            c = min(ok, key=lambda c: abs(c - ideal))
+            cuts.append(c)
+            start = c
+        if len(cuts) == n - 1:
+            parts = [line[a:b] for a, b in zip([0] + cuts, cuts + [len(line)])]
+            if all(draw.textlength(p, font=fnt) <= maxw for p in parts):
+                best = parts
+                break
+    if best:
+        return best
+    return wrap_chars(draw, line, fnt, maxw)
+
+
+def wrap_chars(draw, line, fnt, maxw):
     out, cur = [], ""
     for ch in line:
-        # 「。」「、」などは行の頭に置かない（前の行にぶら下げる）
-        if ch in "。、，．」』）！？ーっゃゅょ":
+        if ch in KINSOKU:
             cur += ch
         elif draw.textlength(cur + ch, font=fnt) > maxw and cur:
             out.append(cur)
@@ -110,173 +148,264 @@ def wrap(draw, line, fnt, maxw):
     return out
 
 
-def background():
-    img = Image.new("RGB", (W, H))
+def draw_rich(d, x, y, text, fnt, stroke, base=WHITE, accent=YELLOW):
+    """「」の中を黄色にして1行描く。x は行の左端。"""
+    color = base
+    for ch in text:
+        if ch in "「『":
+            color = accent
+        d.text((x, y), ch, font=fnt, fill=color, stroke_width=stroke, stroke_fill=BLACK, anchor="ls")
+        x += d.textlength(ch, font=fnt)
+        if ch in "」』":
+            color = base
+
+
+def text_block(lines, maxw, sizes, max_h, first_color=None):
+    """文字だけの透明な画像を作る（太い黒フチ＋影）"""
+    probe = ImageDraw.Draw(Image.new("RGBA", (10, 10)))
+    for size in sizes:
+        f = font(size)
+        rows = []
+        for i, ln in enumerate(lines):
+            for w in wrap(probe, ln, f, maxw):
+                rows.append((w, i))
+        lh = int(size * 1.32)
+        if len(rows) * lh <= max_h:
+            break
+    stroke = max(6, size // 9)
+    img = Image.new("RGBA", (W, len(rows) * lh + stroke * 4 + 20), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    for y in range(H):
-        t = y / H
-        c = tuple(int(BG_TOP[i] * (1 - t) + BG_BOTTOM[i] * t) for i in range(3))
-        d.line([(0, y), (W, y)], fill=c)
-    # 上の帯
-    d.rectangle([0, 0, W, 230], fill=NAVY)
-    f = font(52)
-    title = "運転のコツ ／ ドライブプラス"
-    d.text(((W - d.textlength(title, font=f)) / 2, 120), title, font=f, fill="white", anchor="lm")
-    # 下の帯
-    d.rectangle([0, H - 200, W, H], fill=NAVY)
-    f2 = font(40)
-    foot = "ドライブプラス 代表指導員 山田"
-    d.text(((W - d.textlength(foot, font=f2)) / 2, H - 100), foot, font=f2, fill="white", anchor="lm")
+    y = stroke * 2 + int(size * 1.05)
+    for txt, li in rows:
+        tw = d.textlength(txt, font=f)
+        x = (W - tw) / 2
+        if first_color and li == 0:
+            draw_rich(d, x, y, txt, f, stroke, base=first_color)
+        else:
+            draw_rich(d, x, y, txt, f, stroke)
+        y += lh
+    # 影
+    shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    shadow.putalpha(img.getchannel("A").point(lambda a: int(a * 0.55)))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(10))
+    out = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    out.alpha_composite(shadow, (6, 10))
+    out.alpha_composite(img)
+    return out
+
+
+def label(text, size=46, bg=YELLOW, fg=BLACK, pad=(28, 14)):
+    f = font(size)
+    probe = ImageDraw.Draw(Image.new("RGBA", (10, 10)))
+    tw = int(probe.textlength(text, font=f))
+    w, h = tw + pad[0] * 2, size + pad[1] * 2 + 8
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([0, 0, w - 1, h - 1], radius=h // 2, fill=bg)
+    d.text((w / 2, h / 2 + 2), text, font=f, fill=fg, anchor="mm")
     return img
 
 
-def render_slide(lines, path, page, total, first=False):
-    img = background()
-    d = ImageDraw.Draw(img)
-    maxw = W - 160
-    area_top, area_bottom = 300, H - 300
-    sizes = (78, 72, 66, 60, 54, 50, 46, 42, 40)
+# ---------- 写真 ----------
 
-    def layout(size):
-        f = font(size)
-        wrapped = []
-        for i, ln in enumerate(lines):
-            wrapped += [(w, i == 0 and first) for w in wrap(d, ln, f, maxw)] if ln else [("", False)]
-        return f, wrapped, int(size * 1.55)
+def list_photos(theme):
+    p = os.path.join(ASSETS, "photos", theme)
+    if not os.path.isdir(p):
+        return []
+    return sorted(os.path.join(p, f) for f in os.listdir(p) if f.lower().endswith((".jpg", ".jpeg", ".png")))
 
-    # まずは「どの行も折り返さない」大きさを探す。無理なら折り返して入る大きさ。
-    chosen = None
-    for size in sizes:
-        f, wrapped, line_h = layout(size)
-        fits = len(wrapped) * line_h <= area_bottom - area_top
-        no_wrap = len(wrapped) == len(lines)
-        if fits and (no_wrap or size <= 50):
-            chosen = (f, wrapped, line_h)
-            break
-    if chosen is None:
-        for size in sizes:
-            f, wrapped, line_h = layout(size)
-            if len(wrapped) * line_h <= area_bottom - area_top:
+
+def pick_photos(slides, all_text, rnd):
+    used, picks = set(), []
+    post_themes = [t for t, rx in THEMES if re.search(rx, all_text)]
+    for s in slides:
+        txt = "".join(s)
+        cands = [t for t, rx in THEMES if re.search(rx, txt)] + post_themes + DEFAULT_THEMES
+        chosen = None
+        for t in cands:
+            pool = [p for p in list_photos(t) if p not in used]
+            # 自分の写真（own_）を優先
+            own = [p for p in pool if os.path.basename(p).startswith("own_")]
+            if own and rnd.random() < 0.7:
+                pool = own
+            if pool:
+                chosen = rnd.choice(pool)
                 break
-        chosen = (f, wrapped, line_h)
-    f, wrapped, line_h = chosen
-    y = area_top + ((area_bottom - area_top) - len(wrapped) * line_h) / 2
-    for txt, is_head in wrapped:
-        if txt:
-            color = ACCENT if is_head else TEXT
-            x = (W - d.textlength(txt, font=f)) / 2
-            d.text((x, y + line_h / 2), txt, font=f, fill=color, anchor="lm")
-        y += line_h
-    # ページ表示
-    fp = font(34)
-    pg = f"{page} / {total}"
-    d.text(((W - d.textlength(pg, font=fp)) / 2, H - 250), pg, font=fp, fill=(120, 130, 150), anchor="lm")
-    img.save(path)
+        if not chosen:
+            chosen = rnd.choice([p for t in DEFAULT_THEMES for p in list_photos(t)])
+        used.add(chosen)
+        picks.append(chosen)
+    return picks
 
 
-def render_cta(path):
-    img = background()
-    d = ImageDraw.Draw(img)
-    rows = [
-        ("出張ペーパードライバー講習", 70, NAVY),
-        ("", 40, TEXT),
-        ("運転の不安、", 62, TEXT),
-        ("いっしょに解消しましょう", 62, TEXT),
-        ("", 40, TEXT),
-        ("ドライブプラス", 96, ACCENT),
-        ("", 40, TEXT),
-        ("くわしくはプロフィールのリンクから", 50, TEXT),
-    ]
-    total_h = sum(int(s * 1.6) for _, s, _ in rows)
-    y = (H - total_h) / 2
-    for txt, s, c in rows:
-        f = font(s)
-        if txt:
-            d.text(((W - d.textlength(txt, font=f)) / 2, y + s * 0.8), txt, font=f, fill=c, anchor="lm")
-        y += int(s * 1.6)
-    img.save(path)
+def cover(img, w, h, focus_x=0.5):
+    """写真を w×h いっぱいに切り抜く"""
+    img = img.convert("RGB")
+    s = max(w / img.width, h / img.height)
+    nw, nh = int(img.width * s + 0.5), int(img.height * s + 0.5)
+    img = img.resize((nw, nh), Image.LANCZOS)
+    x = int(min(max(focus_x * nw - w / 2, 0), nw - w))
+    y = (nh - h) // 2
+    return img.crop((x, y, x + w, y + h))
 
 
-def make_bgm(path, seconds):
-    """やさしいコード進行の音（自前で合成）"""
-    sr = 44100
-    chords = [  # C - G - Am - F
-        [261.63, 329.63, 392.00],
-        [246.94, 293.66, 392.00],
-        [220.00, 261.63, 329.63],
-        [174.61, 220.00, 261.63],
-    ]
-    beat = 2.0  # 1コード2秒
-    n = int(sr * seconds)
-    frames = bytearray()
-    for i in range(n):
-        t = i / sr
-        ci = int(t / beat) % len(chords)
-        tt = t % beat
-        env = min(1.0, tt / 0.4) * (0.6 + 0.4 * math.exp(-tt * 1.5))
-        v = 0.0
-        for k, fr in enumerate(chords[ci]):
-            v += math.sin(2 * math.pi * fr * t) + 0.3 * math.sin(2 * math.pi * fr * 2 * t)
-        # アルペジオ（0.5秒ごとに1音）
-        note = chords[ci][int(tt / 0.5) % 3] * 2
-        nt = tt % 0.5
-        v += 1.2 * math.sin(2 * math.pi * note * t) * math.exp(-nt * 6)
-        master = min(1.0, t / 1.0, (seconds - t) / 1.5)
-        s = int(max(-1, min(1, v * env * 0.08 * master)) * 32767)
-        frames += struct.pack("<h", s)
-    with wave.open(path, "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(sr)
-        w.writeframes(bytes(frames))
+def shade():
+    """文字を読みやすくする上下の影"""
+    g = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(g)
+    for y in range(H):
+        a = 0
+        if y < 420:
+            a = int(140 * (1 - y / 420))
+        if y > H * 0.42:
+            a = max(a, int(175 * min(1, (y - H * 0.42) / (H * 0.35))))
+        d.line([(0, y), (W, y)], fill=(0, 0, 0, a))
+    return g
 
 
-def slide_seconds(lines):
+# ---------- 場面 ----------
+
+class Scene:
+    def __init__(self, photo, overlays, dur, zoom_in=True, focus_x=0.5):
+        base = Image.open(photo) if isinstance(photo, str) else photo
+        self.bg = cover(base, int(W * 1.12), int(H * 1.12), focus_x)
+        self.overlays = overlays  # [(画像, x, y, 出始め秒)]
+        self.dur = dur
+        self.zoom_in = zoom_in
+
+    def frame(self, t):
+        p = t / self.dur
+        z = 1.0 + 0.10 * (p if self.zoom_in else 1 - p)
+        bw, bh = self.bg.size
+        cw, ch = bw / z, bh / z
+        x0, y0 = (bw - cw) / 2, (bh - ch) / 2
+        box = (max(0, x0), max(0, y0), min(bw, x0 + cw), min(bh, y0 + ch))
+        img = self.bg.resize((W, H), Image.BILINEAR, box=box).convert("RGBA")
+        img.alpha_composite(SHADE)
+        for ov, x, y, t0 in self.overlays:
+            dt = t - t0
+            if dt < 0:
+                continue
+            if dt < POP:
+                k = dt / POP
+                s = 0.8 + 0.2 * (1 - (1 - k) ** 3) + 0.06 * (k * (1 - k) * 4)
+                ow, oh = max(1, int(ov.width * s)), max(1, int(ov.height * s))
+                o = ov.resize((ow, oh), Image.BILINEAR)
+                a = o.getchannel("A").point(lambda v: int(v * min(1, k * 1.6)))
+                o.putalpha(a)
+                img.alpha_composite(o, (int(x + (ov.width - ow) / 2), int(y + (ov.height - oh) / 2)))
+            else:
+                img.alpha_composite(ov, (int(x), int(y)))
+        return img.convert("RGB")
+
+
+SHADE = None
+
+
+def scene_seconds(lines):
     chars = sum(len(l) for l in lines)
-    return max(3.0, min(7.0, 1.2 + chars * 0.11))
+    return max(2.6, min(5.5, 1.0 + chars * 0.085))
 
 
-def build(text, out_path):
+def build_scenes(text, rnd):
     slides = split_slides(text)
-    tmp = tempfile.mkdtemp()
-    try:
-        imgs, durs = [], []
-        total = len(slides)
-        for i, s in enumerate(slides):
-            p = os.path.join(tmp, f"s{i:02d}.png")
-            render_slide(s, p, i + 1, total, first=(i == 0))
-            imgs.append(p)
-            durs.append(slide_seconds(s))
-        p = os.path.join(tmp, "cta.png")
-        render_cta(p)
-        imgs.append(p)
-        durs.append(4.0)
-        length = sum(durs)
-        bgm = os.path.join(tmp, "bgm.wav")
-        make_bgm(bgm, length)
+    hook = slides[0][0] if slides else ""
+    # 表紙が1行だけなら、次の場面とまとめて表紙にする
+    if len(slides) > 2 and len(slides[0]) == 1 and len(slides[1]) <= 3:
+        slides = [slides[0] + slides[1]] + slides[2:]
+    photos = pick_photos(slides, text, rnd)
+    scenes = []
+    brand = label("ドライブプラス｜運転のコツ", size=36, bg=(255, 255, 255), fg=BLACK, pad=(24, 10))
+    for i, (s, ph) in enumerate(zip(slides, photos)):
+        ovs = [(brand, 50, 150, 0)]
+        if i == 0:
+            # 表紙：大きくタイトル
+            tb = text_block(s, 960, (108, 100, 92, 86, 80, 74), 1000, first_color=YELLOW)
+            ovs.append((tb, 0, (H - tb.height) / 2 - 60, 0.1))
+            dur = max(3.0, scene_seconds(s))
+        else:
+            top = label(hook[:16], size=44)
+            ovs.append((top, (W - top.width) / 2, 300, 0))
+            tb = text_block(s, 940, (88, 82, 76, 70, 64, 58), 800)
+            ovs.append((tb, 0, min(H - 500 - tb.height, 900), 0.1))
+            dur = scene_seconds(s)
+        scenes.append(Scene(ph, ovs, dur, zoom_in=(i % 2 == 0)))
 
-        cmd = [ffmpeg_exe(), "-y", "-loglevel", "error"]
-        for img, dur in zip(imgs, durs):
-            cmd += ["-loop", "1", "-framerate", str(FPS), "-t", f"{dur:.2f}", "-i", img]
-        cmd += ["-i", bgm]
-        parts = []
-        for i, dur in enumerate(durs):
-            parts.append(
-                f"[{i}:v]format=yuv420p,fade=t=in:st=0:d={FADE},"
-                f"fade=t=out:st={dur - FADE:.2f}:d={FADE}[v{i}]"
-            )
-        parts.append("".join(f"[v{i}]" for i in range(len(durs))) + f"concat=n={len(durs)}:v=1:a=0[v]")
-        cmd += [
-            "-filter_complex", ";".join(parts),
-            "-map", "[v]", "-map", f"{len(durs)}:a",
-            "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-r", str(FPS),
-            "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
-            "-movflags", "+faststart", "-shortest", out_path,
-        ]
-        subprocess.run(cmd, check=True)
-        return length
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+    # 締め：山田さんの写真
+    end_photo = os.path.join(ASSETS, "end", "yamada.jpg")
+    ovs = [(brand, 50, 150, 0)]
+    t1 = text_block(["運転の不安、", "プロといっしょに", "解消しませんか？"], 900, (84, 76), 500)
+    ovs.append((t1, 0, 330, 0.1))
+    t2 = text_block(["「出張ペーパードライバー講習」"], 960, (64, 58, 52), 200)
+    ovs.append((t2, 0, 1180, 0.5))
+    t3 = text_block(["ドライブプラス"], 900, (110,), 200)
+    ovs.append((t3, 0, 1290, 0.7))
+    btn = label("プロフィールのリンクから ▶", size=46, bg=YELLOW)
+    ovs.append((btn, (W - btn.width) / 2, 1480, 1.0))
+    scenes.append(Scene(end_photo, ovs, 4.2, zoom_in=True, focus_x=0.29))
+    return scenes
+
+
+# ---------- 音と書き出し ----------
+
+def ffmpeg_exe():
+    exe = shutil.which("ffmpeg")
+    if exe:
+        return exe
+    import imageio_ffmpeg
+    return imageio_ffmpeg.get_ffmpeg_exe()
+
+
+def pick_bgm(rnd):
+    with open(os.path.join(ASSETS, "bgm", "tracks.json"), encoding="utf-8") as f:
+        tracks = json.load(f)
+    tid = rnd.choice(sorted(tracks))
+    return os.path.join(ASSETS, "bgm", f"{tid}.mp3"), tracks[tid]["start"]
+
+
+def build(text, out_path, seed=None):
+    global SHADE
+    if SHADE is None:
+        SHADE = shade()
+    rnd = random.Random(seed if seed is not None else text)
+    scenes = build_scenes(text, rnd)
+    # 切り替えで重なる分を引いた長さ
+    total = sum(s.dur for s in scenes) - XFADE * (len(scenes) - 1)
+    bgm, start = pick_bgm(rnd)
+
+    cmd = [
+        ffmpeg_exe(), "-y", "-loglevel", "error",
+        "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
+        "-ss", str(start), "-i", bgm,
+        "-filter_complex",
+        f"[1:a]atrim=0:{total:.2f},afade=t=in:st=0:d=0.4,afade=t=out:st={total - 1.5:.2f}:d=1.5,volume=0.85[a]",
+        "-map", "0:v", "-map", "[a]",
+        "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "160k", "-ar", "44100",
+        "-movflags", "+faststart", "-t", f"{total:.2f}", out_path,
+    ]
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+
+    # 各場面の始まり（前の場面と XFADE 秒重ねる）
+    starts, t = [], 0.0
+    for s in scenes:
+        starts.append(t)
+        t += s.dur - XFADE
+    n = int(total * FPS)
+    for fi in range(n):
+        t = fi / FPS
+        idx = max(i for i, st in enumerate(starts) if st <= t + 1e-9)
+        cur = scenes[idx].frame(t - starts[idx])
+        # 前の場面との重なり
+        if idx > 0 and t - starts[idx] < XFADE:
+            prev = scenes[idx - 1].frame(t - starts[idx - 1])
+            k = (t - starts[idx]) / XFADE
+            cur = Image.blend(prev, cur, k)
+        proc.stdin.write(cur.tobytes())
+    proc.stdin.close()
+    if proc.wait() != 0:
+        raise RuntimeError("ffmpeg でエラーが出ました")
+    return total
 
 
 def main():
@@ -284,7 +413,7 @@ def main():
     out = sys.argv[2] if len(sys.argv) > 2 else f"reel_{pid}.mp4"
     with open(os.path.join(HERE, "posts.csv"), encoding="utf-8-sig", newline="") as f:
         rows = {r["id"]: r for r in csv.DictReader(f)}
-    sec = build(rows[pid]["text"], out)
+    sec = build(rows[pid]["text"], out, seed=pid)
     print(f"作成しました: {out}（{sec:.1f}秒）")
 
 
