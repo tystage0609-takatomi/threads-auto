@@ -17,7 +17,7 @@ on:
         type: boolean
         default: true
       post_id:
-        description: "instagram のとき：リールにする posts.csv の id"
+        description: "instagram のとき：リールにする posts.csv の id（指導員募集は r1 のように r を付ける）"
         type: string
         default: "3"
 
@@ -72,7 +72,7 @@ jobs:
       # ここからインスタ（失敗しても Threads には影響しない）
       - name: 動画を作る道具を入れる
         id: tools
-        if: github.event.schedule != '0 8 * * 3' && (github.event_name != 'workflow_dispatch' || inputs.kind == 'instagram')
+        if: github.event_name != 'workflow_dispatch' || inputs.kind == 'instagram'
         run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg fonts-noto-cjk
 
       - name: インスタにリールを投稿
@@ -81,6 +81,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             python ig_post.py "${{ inputs.post_id }}"
+          elif [ "${{ github.event.schedule }}" = "0 8 * * 3" ]; then
+            python ig_post.py recruit
           else
             python ig_post.py
           fi

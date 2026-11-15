@@ -6,6 +6,8 @@ GitHub Actions で Threads の投稿のすぐあとに呼ばれる。
 使い方:
   python ig_post.py          # 今日 Threads に投稿した分をリールにする
   python ig_post.py <id>     # posts.csv の id を指定（手動テスト用）
+  python ig_post.py recruit  # 今日 Threads に投稿した指導員募集をリールにする
+  python ig_post.py r<id>    # recruit.csv の id を指定（手動テスト用）
 環境変数:
   TOKEN_KEY / INSTAGRAM_ACCESS_TOKEN  トークン（tokens.py を参照）
   DRY_RUN=1  動画は作るが投稿しない
@@ -26,6 +28,7 @@ import tokens
 JST = timezone(timedelta(hours=9))
 HERE = os.path.dirname(os.path.abspath(__file__))
 POSTS = os.path.join(HERE, "posts.csv")
+RECRUIT = os.path.join(HERE, "recruit.csv")
 LOG = os.path.join(HERE, "ig_log.csv")
 # Metaの「統合ログイン」で作ったシステムユーザートークン（期限なし）を使う
 API = "https://graph.facebook.com/v23.0"
@@ -37,16 +40,26 @@ HASHTAGS = (
 )
 
 
-def caption(text):
+RECRUIT_HASHTAGS = (
+    "#教習指導員 #指導員募集 #ペーパードライバー講習 #出張講習 "
+    "#自動車学校 #教習所 #独立開業 #ドライブプラス"
+)
+
+
+def caption(text, kind="daily"):
     lines = []
     for ln in text.strip().splitlines():
-        if "http" in ln:
+        # リンクと本人の名前・署名は入れない
+        if "http" in ln or "山田" in ln or "代表指導員" in ln:
             continue
         s = ln.strip()
         if s in ("詳しくはこちら", "詳しくはnoteで"):
             continue
         lines.append(ln)
     body = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+    if kind == "recruit":
+        body = body.replace("ホームページの\n「お問い合わせ」フォーム", "プロフィールのリンク（ホームページ）の\n「お問い合わせ」フォーム")
+        return f"{body}\n\n▶ プロフィールのリンクからホームページへ\n\n{RECRUIT_HASHTAGS}"
     return (
         f"{body}\n\n"
         "ペーパードライバー講習のドライブプラス\n"
@@ -64,9 +77,9 @@ def read_log():
 
 def write_log(rows):
     with open(LOG, "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["id", "posted_at", "media_id"])
+        w = csv.DictWriter(f, fieldnames=["id", "posted_at", "media_id", "kind"])
         w.writeheader()
-        w.writerows(rows)
+        w.writerows({k: r.get(k, "") for k in ["id", "posted_at", "media_id", "kind"]} for r in rows)
 
 
 def api_err(r, what):
@@ -118,14 +131,18 @@ def publish_reel(video_path, cap, token):
 def main():
     now = datetime.now(JST)
     today = now.date().isoformat()
-    with open(POSTS, encoding="utf-8-sig", newline="") as f:
+    arg = sys.argv[1] if len(sys.argv) > 1 else ""
+    # recruit / r<id> は指導員募集（recruit.csv）、それ以外は毎日の投稿（posts.csv）
+    kind = "recruit" if arg == "recruit" or arg.startswith("r") else "daily"
+    src = RECRUIT if kind == "recruit" else POSTS
+    with open(src, encoding="utf-8-sig", newline="") as f:
         posts = list(csv.DictReader(f))
     log = read_log()
 
-    if len(sys.argv) > 1:
-        post = next(p for p in posts if p["id"] == sys.argv[1])
+    if arg and arg != "recruit":
+        post = next(p for p in posts if p["id"] == arg.lstrip("r"))
     else:
-        if any(r["posted_at"].startswith(today) for r in log):
+        if any(r["posted_at"].startswith(today) and (r.get("kind") or "daily") == kind for r in log):
             print("本日はインスタに投稿済みのためスキップ")
             return
         todays = [p for p in posts if p.get("posted_at", "").startswith(today)]
@@ -135,8 +152,8 @@ def main():
         post = todays[-1]
 
     video = os.path.join(HERE, "reel.mp4")
-    sec = make_reel.build(post["text"], video)
-    cap = caption(post["text"])
+    sec = make_reel.build(post["text"], video, seed=f"{kind}{post['id']}", kind=kind)
+    cap = caption(post["text"], kind)
     print(f"動画を作りました（id={post['id']}、{sec:.1f}秒）\n--- 本文 ---\n{cap}\n------------")
 
     token = tokens.get("instagram", "INSTAGRAM_ACCESS_TOKEN")
@@ -151,7 +168,7 @@ def main():
         sys.exit(1)
 
     media_id = publish_reel(video, cap, token)
-    log.append({"id": post["id"], "posted_at": now.strftime("%Y-%m-%d %H:%M"), "media_id": media_id})
+    log.append({"id": post["id"], "posted_at": now.strftime("%Y-%m-%d %H:%M"), "media_id": media_id, "kind": kind})
     write_log(log)
     print(f"投稿完了 media_id={media_id}")
 

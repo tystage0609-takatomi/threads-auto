@@ -134,14 +134,36 @@ def wrap(draw, line, fnt, maxw):
     return wrap_chars(draw, line, fnt, maxw)
 
 
+def is_kata(ch):
+    return "ァ" <= ch <= "ヺ" or ch == "ー"
+
+
+def is_kanji(ch):
+    return "一" <= ch <= "鿿"
+
+
+def bad_break(a, b):
+    return (is_kata(a) and is_kata(b)) or (is_kanji(a) and is_kanji(b))
+
+
 def wrap_chars(draw, line, fnt, maxw):
     out, cur = [], ""
     for ch in line:
-        if ch in KINSOKU:
+        # 「。」「、」などは行の頭に置かない（前の行にぶら下げる）
+        if ch in KINSOKU and not is_kata(ch):
             cur += ch
         elif draw.textlength(cur + ch, font=fnt) > maxw and cur:
-            out.append(cur)
-            cur = ch
+            # カタカナの言葉の途中なら、言葉の頭まで戻して次の行へ送る
+            k = len(cur)
+            if is_kata(ch):
+                while k > 0 and is_kata(cur[k - 1]):
+                    k -= 1
+            if 0 < k < len(cur):
+                out.append(cur[:k])
+                cur = cur[k:] + ch
+            else:
+                out.append(cur)
+                cur = ch
         else:
             cur += ch
     out.append(cur)
@@ -170,7 +192,13 @@ def text_block(lines, maxw, sizes, max_h, first_color=None):
             for w in wrap(probe, ln, f, maxw):
                 rows.append((w, i))
         lh = int(size * 1.32)
-        if len(rows) * lh <= max_h:
+        # 言葉の途中（カタカナどうし・漢字どうし）で切れていたら、もう一段小さい文字を試す
+        bad = any(
+            rows[k][1] == rows[k + 1][1] and rows[k][0] and rows[k + 1][0]
+            and bad_break(rows[k][0][-1], rows[k + 1][0][0])
+            for k in range(len(rows) - 1)
+        )
+        if len(rows) * lh <= max_h and (not bad or size == sizes[-1]):
             break
     stroke = max(6, size // 9)
     img = Image.new("RGBA", (W, len(rows) * lh + stroke * 4 + 20), (0, 0, 0, 0))
@@ -215,12 +243,20 @@ def list_photos(theme):
     return sorted(os.path.join(p, f) for f in os.listdir(p) if f.lower().endswith((".jpg", ".jpeg", ".png")))
 
 
-def pick_photos(slides, all_text, rnd):
+RECRUIT_THEMES = ["lesson", "wheel", "interior", "city", "road", "crosswalk"]
+
+
+def pick_photos(slides, all_text, rnd, kind="daily"):
     used, picks = set(), []
     post_themes = [t for t, rx in THEMES if re.search(rx, all_text)]
     for s in slides:
         txt = "".join(s)
-        cands = [t for t, rx in THEMES if re.search(rx, txt)] + post_themes + DEFAULT_THEMES
+        if kind == "recruit":
+            cands = RECRUIT_THEMES[:]
+            rnd.shuffle(cands)
+            cands = ["lesson"] + cands
+        else:
+            cands = [t for t, rx in THEMES if re.search(rx, txt)] + post_themes + DEFAULT_THEMES
         chosen = None
         for t in cands:
             pool = [p for p in list_photos(t) if p not in used]
@@ -307,15 +343,16 @@ def scene_seconds(lines):
     return max(2.6, min(5.5, 1.0 + chars * 0.085))
 
 
-def build_scenes(text, rnd):
+def build_scenes(text, rnd, kind="daily"):
     slides = split_slides(text)
     hook = slides[0][0] if slides else ""
     # 表紙が1行だけなら、次の場面とまとめて表紙にする
     if len(slides) > 2 and len(slides[0]) == 1 and len(slides[1]) <= 3:
         slides = [slides[0] + slides[1]] + slides[2:]
-    photos = pick_photos(slides, text, rnd)
+    photos = pick_photos(slides, text, rnd, kind)
     scenes = []
-    brand = label("ドライブプラス｜運転のコツ", size=36, bg=(255, 255, 255), fg=BLACK, pad=(24, 10))
+    tag = "指導員募集" if kind == "recruit" else "運転のコツ"
+    brand = label(f"ドライブプラス｜{tag}", size=36, bg=(255, 255, 255), fg=BLACK, pad=(24, 10))
     for i, (s, ph) in enumerate(zip(slides, photos)):
         ovs = [(brand, 50, 150, 0)]
         if i == 0:
@@ -335,13 +372,19 @@ def build_scenes(text, rnd):
     end_pool = [p for p in list_photos("lesson") + list_photos("road") if p not in photos]
     end_photo = rnd.choice(end_pool)
     ovs = [(brand, 50, 150, 0)]
-    t1 = text_block(["運転の不安、", "プロといっしょに", "解消しませんか？"], 900, (84, 76), 500)
+    if kind == "recruit":
+        head = ["教習指導員の資格、", "出張ペーパードライバー", "講習で活かしませんか？"]
+        sub, btn_text = "「集客のお手伝いをします」", "プロフィールのリンクからお問い合わせ ▶"
+    else:
+        head = ["運転の不安、", "プロといっしょに", "解消しませんか？"]
+        sub, btn_text = "「出張ペーパードライバー講習」", "プロフィールのリンクから ▶"
+    t1 = text_block(head, 940, (84, 76, 70), 500)
     ovs.append((t1, 0, 330, 0.1))
-    t2 = text_block(["「出張ペーパードライバー講習」"], 960, (64, 58, 52), 200)
+    t2 = text_block([sub], 960, (64, 58, 52), 200)
     ovs.append((t2, 0, 1180, 0.5))
     t3 = text_block(["ドライブプラス"], 900, (110,), 200)
     ovs.append((t3, 0, 1290, 0.7))
-    btn = label("プロフィールのリンクから ▶", size=46, bg=YELLOW)
+    btn = label(btn_text, size=42 if kind == "recruit" else 46, bg=YELLOW)
     ovs.append((btn, (W - btn.width) / 2, 1480, 1.0))
     scenes.append(Scene(end_photo, ovs, 4.2, zoom_in=True))
     return scenes
@@ -364,12 +407,12 @@ def pick_bgm(rnd):
     return os.path.join(ASSETS, "bgm", f"{tid}.mp3"), tracks[tid]["start"]
 
 
-def build(text, out_path, seed=None):
+def build(text, out_path, seed=None, kind="daily"):
     global SHADE
     if SHADE is None:
         SHADE = shade()
     rnd = random.Random(seed if seed is not None else text)
-    scenes = build_scenes(text, rnd)
+    scenes = build_scenes(text, rnd, kind)
     # 切り替えで重なる分を引いた長さ
     total = sum(s.dur for s in scenes) - XFADE * (len(scenes) - 1)
     bgm, start = pick_bgm(rnd)
@@ -410,11 +453,14 @@ def build(text, out_path, seed=None):
 
 
 def main():
+    # id の頭に r を付けると指導員募集（recruit.csv）の投稿
     pid = sys.argv[1]
     out = sys.argv[2] if len(sys.argv) > 2 else f"reel_{pid}.mp4"
-    with open(os.path.join(HERE, "posts.csv"), encoding="utf-8-sig", newline="") as f:
+    kind = "recruit" if pid.startswith("r") else "daily"
+    src = "recruit.csv" if kind == "recruit" else "posts.csv"
+    with open(os.path.join(HERE, src), encoding="utf-8-sig", newline="") as f:
         rows = {r["id"]: r for r in csv.DictReader(f)}
-    sec = build(rows[pid]["text"], out, seed=pid)
+    sec = build(rows[pid.lstrip("r")]["text"], out, seed=pid, kind=kind)
     print(f"作成しました: {out}（{sec:.1f}秒）")
 
 
