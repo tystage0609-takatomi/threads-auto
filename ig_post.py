@@ -27,7 +27,9 @@ JST = timezone(timedelta(hours=9))
 HERE = os.path.dirname(os.path.abspath(__file__))
 POSTS = os.path.join(HERE, "posts.csv")
 LOG = os.path.join(HERE, "ig_log.csv")
-API = "https://graph.instagram.com/v23.0"
+# Metaの「統合ログイン」で作ったシステムユーザートークン（期限なし）を使う
+API = "https://graph.facebook.com/v23.0"
+IG_USER_ID = "17841463025184235"  # @unten_urakyokasho
 
 HASHTAGS = (
     "#ペーパードライバー #ペーパードライバー講習 #運転のコツ #運転練習 "
@@ -75,8 +77,8 @@ def api_err(r, what):
 
 
 def publish_reel(video_path, cap, token):
-    user = api_err(requests.get(f"{API}/me", params={"fields": "user_id,username", "access_token": token}, timeout=30), "アカウント確認")
-    uid = user["user_id"]
+    uid = IG_USER_ID
+    user = api_err(requests.get(f"{API}/{uid}", params={"fields": "username", "access_token": token}, timeout=30), "アカウント確認")
     print(f"@{user['username']} に投稿します")
 
     # 1. 入れ物を作る（動画は直接アップロードする方式）
@@ -140,7 +142,7 @@ def main():
     token = tokens.get("instagram", "INSTAGRAM_ACCESS_TOKEN")
     if os.environ.get("DRY_RUN") == "1":
         if token:
-            r = requests.get(f"{API}/me", params={"fields": "username", "access_token": token}, timeout=30)
+            r = requests.get(f"{API}/{IG_USER_ID}", params={"fields": "username", "access_token": token}, timeout=30)
             print(f"✅ トークン確認OK：@{r.json().get('username')}" if r.ok else f"::error::トークンが使えません: {r.text}")
         print("DRY_RUN のため投稿していません")
         return

@@ -1,4 +1,5 @@
-"""Threads とインスタのアクセストークンを延長する（60日 → また60日）。
+"""Threads のアクセストークンを延長する（60日 → また60日）。
+インスタはシステムユーザートークン（期限なし）なので延長はいらない。
 
 GitHub Actions から週1回呼ばれる。延長したトークンは tokens.enc に保存する。
 """
@@ -17,11 +18,6 @@ TARGETS = {
         "THREADS_ACCESS_TOKEN",
         "https://graph.threads.net/refresh_access_token",
         "th_refresh_token",
-    ),
-    "instagram": (
-        "INSTAGRAM_ACCESS_TOKEN",
-        "https://graph.instagram.com/refresh_access_token",
-        "ig_refresh_token",
     ),
 }
 
