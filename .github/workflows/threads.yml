@@ -8,21 +8,33 @@ on:
   workflow_dispatch:
     inputs:
       kind:
-        description: "投稿の種類（daily=毎日の投稿 / recruit=指導員募集）"
+        description: "投稿の種類（daily=毎日の投稿 / recruit=指導員募集 / instagram=インスタのリールだけ）"
         type: choice
-        options: [daily, recruit]
+        options: [daily, recruit, instagram]
         default: daily
       dry_run:
         description: "テスト（実際には投稿しない）"
         type: boolean
         default: true
+      post_id:
+        description: "instagram のとき：リールにする posts.csv の id"
+        type: string
+        default: "3"
 
 permissions:
   contents: write
 
+concurrency:
+  group: auto-post
+  cancel-in-progress: false
+
 jobs:
   post:
     runs-on: ubuntu-latest
+    env:
+      TOKEN_KEY: ${{ secrets.TOKEN_KEY }}
+      THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '1' || '0' }}
     steps:
       - uses: actions/checkout@v5
 
@@ -30,12 +42,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install requests jpholiday
+      - run: pip install requests jpholiday cryptography pillow
 
-      - name: 投稿
-        env:
-          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
-          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '1' || '0' }}
+      - name: Threads に投稿
+        if: github.event_name != 'workflow_dispatch' || inputs.kind != 'instagram'
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             if [ "${{ inputs.kind }}" = "recruit" ]; then
@@ -51,9 +61,32 @@ jobs:
             python post.py weekend
           fi
 
-      - name: 投稿記録を保存
+      - name: 投稿記録を保存（Threads）
+        if: always()
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
           git add posts.csv recruit.csv
-          git diff --cached --quiet || (git commit -m "投稿記録を更新" && git push)
+          git diff --cached --quiet || (git commit -m "投稿記録を更新" && git pull --rebase -q && git push)
+
+      # ここからインスタ（失敗しても Threads には影響しない）
+      - name: 動画を作る道具を入れる
+        id: tools
+        if: github.event.schedule != '0 8 * * 3' && (github.event_name != 'workflow_dispatch' || inputs.kind == 'instagram')
+        run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg fonts-noto-cjk
+
+      - name: インスタにリールを投稿
+        if: steps.tools.outcome == 'success'
+        continue-on-error: true
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python ig_post.py "${{ inputs.post_id }}"
+          else
+            python ig_post.py
+          fi
+
+      - name: 投稿記録を保存（インスタ）
+        if: steps.tools.outcome == 'success'
+        run: |
+          git add ig_log.csv 2>/dev/null || true
+          git diff --cached --quiet || (git commit -m "インスタの投稿記録を更新" && git pull --rebase -q && git push)

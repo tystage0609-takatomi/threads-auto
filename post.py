@@ -23,6 +23,8 @@ from datetime import datetime, timedelta, timezone
 import jpholiday
 import requests
 
+import tokens
+
 JST = timezone(timedelta(hours=9))
 CSV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "posts.csv")
 API = "https://graph.threads.net/v1.0"
@@ -90,7 +92,7 @@ def recruit(now, force=False):
     if os.environ.get("DRY_RUN") == "1":
         print("DRY_RUN のため実際には投稿していません")
         return
-    thread_id = publish(text, os.environ["THREADS_ACCESS_TOKEN"])
+    thread_id = publish(text, tokens.get("threads", "THREADS_ACCESS_TOKEN"))
     post["posted_at"] = now.strftime("%Y-%m-%d %H:%M")
     with open(RECRUIT_PATH, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=FIELDS)
@@ -137,7 +139,7 @@ def main():
     print(f"投稿します (id={post['id']}):\n{text}\n")
 
     if os.environ.get("DRY_RUN") == "1":
-        token = os.environ.get("THREADS_ACCESS_TOKEN")
+        token = tokens.get("threads", "THREADS_ACCESS_TOKEN")
         if token:
             r = requests.get(f"{API}/me", params={"fields": "username", "access_token": token}, timeout=30)
             if r.ok:
@@ -148,7 +150,7 @@ def main():
         print("DRY_RUN のため実際には投稿していません")
         return
 
-    token = os.environ["THREADS_ACCESS_TOKEN"]
+    token = tokens.get("threads", "THREADS_ACCESS_TOKEN")
     thread_id = publish(text, token)
     post["posted_at"] = now.strftime("%Y-%m-%d %H:%M")
     save_posts(rows)

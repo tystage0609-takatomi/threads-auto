@@ -1,0 +1,40 @@
+name: トークン自動更新
+
+on:
+  schedule:
+    - cron: "0 18 * * 0"  # 毎週月曜 3:00 JST
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-post
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - run: pip install requests cryptography
+
+      - name: トークンを延長
+        env:
+          TOKEN_KEY: ${{ secrets.TOKEN_KEY }}
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+        run: python refresh_tokens.py
+
+      - name: 保存
+        if: always()
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add tokens.enc
+          git diff --cached --quiet || (git commit -m "トークンを更新" && git pull --rebase -q && git push)
