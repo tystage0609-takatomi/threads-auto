@@ -39,6 +39,7 @@ BASE_TAGS = "#ペーパードライバー講習 #教習所 #自動車 #運転"
 EXTRA_TAGS = "#ペーパードライバー #運転のコツ #ドライブプラス #大阪 #兵庫"
 # 文章の言葉 → 5つ目のハッシュタグ（上から順に見て、最初に当てはまったもの）
 TOPIC_TAGS = [
+    (r"学科試験", "#学科試験"),
     (r"安全運転管理者|社用車|従業員", "#安全運転管理者"),
     (r"事故|ヒヤリ|危ない|危険", "#交通事故"),
     (r"飲酒|お酒|忘年会|飲み会|呼気", "#飲酒運転"),
@@ -67,7 +68,13 @@ RECRUIT_HASHTAGS = (
 
 def caption(text, kind="daily"):
     lines = []
+    has_note = "note.com" in text
     for ln in text.strip().splitlines():
+        # インスタはリンクが押せないので、noteへの案内の言い方を変える
+        if has_note and ln.rstrip().endswith("はこちら"):
+            ln = ln.rstrip()[:-4] + "は、noteで紹介しています"
+        if has_note and ln.rstrip().endswith("👇"):
+            ln = ln.rstrip()[:-1]
         # リンクと本人の名前・署名は入れない
         if "http" in ln or "山田" in ln or "代表指導員" in ln:
             continue
@@ -79,8 +86,10 @@ def caption(text, kind="daily"):
     if kind == "recruit":
         body = body.replace("ホームページの\n「お問い合わせ」フォーム", "プロフィールのリンク（ホームページ）の\n「お問い合わせ」フォーム")
         return f"{body}\n\n▶ プロフィールのリンクからホームページへ\n\n{RECRUIT_HASHTAGS}"
+    note = "📖 続きはnoteで\n「運転の裏教科書」と検索してください\n\n" if has_note else ""
     return (
         f"{body}\n\n"
+        f"{note}"
         "ペーパードライバー講習のドライブプラス\n"
         "▶ くわしくはプロフィールのリンクから\n\n"
         f"{daily_tags(text)}"

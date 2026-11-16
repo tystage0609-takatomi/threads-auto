@@ -83,6 +83,9 @@ def split_slides(text):
             if "http" in ln or "山田" in ln or "代表指導員" in ln:
                 continue
             c = clean_line(ln)
+            # リールではリンクが押せないので、noteへの案内の言い方を変える
+            if "note.com" in text and c.endswith("はこちら"):
+                c = c[:-4] + "は、noteで紹介しています"
             if c in ("詳しくはこちら", "詳しくはnoteで", "→", ""):
                 continue
             lines.append(c)
