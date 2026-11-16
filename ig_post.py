@@ -171,7 +171,8 @@ def main():
         post = todays[-1]
 
     video = os.path.join(HERE, "reel.mp4")
-    sec = make_reel.build(post["text"], video, seed=f"{kind}{post['id']}", kind=kind)
+    key = ("r" if kind == "recruit" else "") + post["id"]
+    sec = make_reel.build(post["text"], video, seed=f"{kind}{post['id']}", kind=kind, title=make_reel.load_title(key))
     cap = caption(post["text"], kind)
     print(f"動画を作りました（id={post['id']}、{sec:.1f}秒）\n--- 本文 ---\n{cap}\n------------")
 

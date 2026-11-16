@@ -182,7 +182,7 @@ def draw_rich(d, x, y, text, fnt, stroke, base=WHITE, accent=YELLOW):
             color = base
 
 
-def text_block(lines, maxw, sizes, max_h, first_color=None):
+def text_block(lines, maxw, sizes, max_h, first_color=None, line_colors=None):
     """文字だけの透明な画像を作る（太い黒フチ＋影）"""
     probe = ImageDraw.Draw(Image.new("RGBA", (10, 10)))
     for size in sizes:
@@ -207,7 +207,10 @@ def text_block(lines, maxw, sizes, max_h, first_color=None):
     for txt, li in rows:
         tw = d.textlength(txt, font=f)
         x = (W - tw) / 2
-        if first_color and li == 0:
+        if line_colors:
+            base = line_colors[li % len(line_colors)]
+            draw_rich(d, x, y, txt, f, stroke, base=base)
+        elif first_color and li == 0:
             draw_rich(d, x, y, txt, f, stroke, base=first_color)
         else:
             draw_rich(d, x, y, txt, f, stroke)
@@ -343,16 +346,63 @@ def scene_seconds(lines):
     return max(2.6, min(5.5, 1.0 + chars * 0.085))
 
 
-def build_scenes(text, rnd, kind="daily"):
+TITLES = os.path.join(HERE, "reel_titles.csv")
+RED = (220, 30, 45)
+
+
+def load_title(key):
+    """reel_titles.csv から表紙の文字を読む（key は posts の id、指導員募集は r<id>）"""
+    if not os.path.exists(TITLES):
+        return None
+    with open(TITLES, encoding="utf-8-sig", newline="") as f:
+        for r in csv.DictReader(f):
+            if r["id"] == key:
+                return r
+    return None
+
+
+def title_scene(title, photo, brand):
+    """表紙（1枚目）：何の話かひと目でわかる大きな文字。最初のコマから文字を出す。
+    プロフィールの一覧は真ん中が縦長に切り取られるので、文字は真ん中に集める。"""
+    lines = [t for t in title["title"].split("/") if t]
+    tag = label(title.get("tag") or "運転のコツ", size=54, bg=RED, fg=WHITE, pad=(34, 14))
+    tb = text_block(lines, 1000, (176, 164, 152, 140, 128, 118, 108), 620, line_colors=[WHITE, YELLOW])
+    parts = [(tag, (W - tag.width) / 2, 30), (tb, 0, 0)]
+    if title.get("sub"):
+        sb = label(title["sub"], size=54, bg=BLACK, fg=WHITE, pad=(34, 16))
+        parts.append((sb, (W - sb.width) / 2, 10))
+    total = sum(p[0].height + p[2] for p in parts)
+    y = H / 2 - total / 2 - 20
+    ovs = [(brand, 50, 150, -POP)]
+    for img, x, gap in parts:
+        y += gap
+        ovs.append((img, x, y, -POP))  # 動きなしで最初から表示
+        y += img.height
+    sc = Scene(photo, ovs, 2.4, zoom_in=False)
+    # 写真を少し暗くして文字を読みやすく
+    dark = Image.new("RGBA", sc.bg.size, (0, 0, 0, 90))
+    bg = sc.bg.convert("RGBA")
+    bg.alpha_composite(dark)
+    sc.bg = bg.convert("RGB")
+    return sc
+
+
+def build_scenes(text, rnd, kind="daily", title=None):
     slides = split_slides(text)
     hook = slides[0][0] if slides else ""
     # 表紙が1行だけなら、次の場面とまとめて表紙にする
     if len(slides) > 2 and len(slides[0]) == 1 and len(slides[1]) <= 3:
         slides = [slides[0] + slides[1]] + slides[2:]
-    photos = pick_photos(slides, text, rnd, kind)
+    if not title:
+        # 表紙の文字がまだ用意されていない投稿は、最初の文をそのまま使う
+        title = {"tag": "指導員募集" if kind == "recruit" else "運転のコツ",
+                 "title": "/".join(slides[0][:2]) if slides else "", "sub": ""}
+    photos = pick_photos([lines for lines in [title["title"].split("/")]] + slides, text, rnd, kind)
     scenes = []
     tag = "指導員募集" if kind == "recruit" else "運転のコツ"
     brand = label(f"ドライブプラス｜{tag}", size=36, bg=(255, 255, 255), fg=BLACK, pad=(24, 10))
+    scenes.append(title_scene(title, photos[0], brand))
+    photos = photos[1:]
     for i, (s, ph) in enumerate(zip(slides, photos)):
         ovs = [(brand, 50, 150, 0)]
         if i == 0:
@@ -366,7 +416,7 @@ def build_scenes(text, rnd, kind="daily"):
             tb = text_block(s, 940, (88, 82, 76, 70, 64, 58), 800)
             ovs.append((tb, 0, min(H - 500 - tb.height, 900), 0.1))
             dur = scene_seconds(s)
-        scenes.append(Scene(ph, ovs, dur, zoom_in=(i % 2 == 0)))
+        scenes.append(Scene(ph, ovs, dur, zoom_in=(i % 2 == 1)))
 
     # 締め：ドライブプラスへの案内（人物の写真・名前は使わない）
     end_pool = [p for p in list_photos("lesson") + list_photos("road") if p not in photos]
@@ -407,12 +457,12 @@ def pick_bgm(rnd):
     return os.path.join(ASSETS, "bgm", f"{tid}.mp3"), tracks[tid]["start"]
 
 
-def build(text, out_path, seed=None, kind="daily"):
+def build(text, out_path, seed=None, kind="daily", title=None):
     global SHADE
     if SHADE is None:
         SHADE = shade()
     rnd = random.Random(seed if seed is not None else text)
-    scenes = build_scenes(text, rnd, kind)
+    scenes = build_scenes(text, rnd, kind, title)
     # 切り替えで重なる分を引いた長さ
     total = sum(s.dur for s in scenes) - XFADE * (len(scenes) - 1)
     bgm, start = pick_bgm(rnd)
@@ -460,7 +510,10 @@ def main():
     src = "recruit.csv" if kind == "recruit" else "posts.csv"
     with open(os.path.join(HERE, src), encoding="utf-8-sig", newline="") as f:
         rows = {r["id"]: r for r in csv.DictReader(f)}
-    sec = build(rows[pid.lstrip("r")]["text"], out, seed=pid, kind=kind)
+    sec = build(rows[pid.lstrip("r")]["text"], out, seed=pid, kind=kind, title=load_title(pid))
+    if len(sys.argv) > 3:
+        # 表紙の確認用：1コマ目を画像で保存
+        subprocess.run([ffmpeg_exe(), "-y", "-loglevel", "error", "-i", out, "-frames:v", "1", sys.argv[3]], check=True)
     print(f"作成しました: {out}（{sec:.1f}秒）")
 
 
