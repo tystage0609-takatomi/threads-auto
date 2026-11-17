@@ -96,6 +96,26 @@ def caption(text, kind="daily"):
     )
 
 
+REPEAT_RATIO = 0.55  # これ以上似ていたら「同じ内容のリピート」とみなす
+
+
+def _norm(text):
+    return re.sub(r"https?://\S+|[\s\W_]", "", text)
+
+
+def similar_posted(post, posts, log):
+    """インスタに投稿済みの毎日の投稿の中に、ほぼ同じ内容があれば、その id を返す"""
+    import difflib
+    by_id = {p["id"]: p["text"] for p in posts}
+    me = _norm(post["text"])
+    for r in log:
+        if (r.get("kind") or "daily") != "daily" or r["id"] == post["id"] or r["id"] not in by_id:
+            continue
+        if difflib.SequenceMatcher(None, me, _norm(by_id[r["id"]])).ratio() >= REPEAT_RATIO:
+            return r["id"]
+    return None
+
+
 def read_log():
     if not os.path.exists(LOG):
         return []
@@ -178,6 +198,12 @@ def main():
             print("今日の Threads の投稿がないのでスキップ")
             return
         post = todays[-1]
+        # Threads はリピートOKだが、インスタはプロフィールで振り返りやすいのでリピートしない
+        if kind == "daily":
+            same = similar_posted(post, posts, log)
+            if same:
+                print(f"id={post['id']} はインスタに投稿済みの id={same} とほぼ同じ内容のためスキップ（インスタはリピートしない）")
+                return
 
     video = os.path.join(HERE, "reel.mp4")
     key = ("r" if kind == "recruit" else "") + post["id"]
