@@ -84,7 +84,7 @@ def caption(text, kind="daily"):
         lines.append(ln)
     body = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
     if kind == "recruit":
-        body = body.replace("ホームページの\n「指導員募集」ページ", "プロフィールのリンク（ホームページ）の\n「指導員募集」ページ")
+        body = body.replace("ホームページの\n「お問い合わせ」フォーム", "プロフィールのリンク（ホームページ）の\n「お問い合わせ」フォーム")
         return f"{body}\n\n▶ プロフィールのリンクからホームページへ\n\n{RECRUIT_HASHTAGS}"
     note = "📖 続きはnoteで\n「運転の裏教科書」と検索してください\n\n" if has_note else ""
     return (
