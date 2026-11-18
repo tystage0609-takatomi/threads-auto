@@ -252,8 +252,34 @@ def list_photos(theme):
 RECRUIT_THEMES = ["lesson", "wheel", "interior", "city", "road", "crosswalk"]
 
 
+RECENT_PATH = os.path.join(ASSETS, "recent_photos.txt")
+RECENT_KEEP = 60  # 直近のリールで使った写真の数（この中の写真はなるべく使わない）
+LAST_PICKS = []   # 今回のリールで使った写真（投稿できたら recent に足す）
+
+
+def _key(p):
+    return os.path.relpath(p, os.path.join(ASSETS, "photos")).replace(os.sep, "/")
+
+
+def load_recent():
+    if not os.path.exists(RECENT_PATH):
+        return []
+    with open(RECENT_PATH, encoding="utf-8") as f:
+        return [ln.strip() for ln in f if ln.strip()]
+
+
+def save_recent(picks):
+    """投稿できたリールの写真を、最近使った写真に足す"""
+    keys = load_recent() + [_key(p) for p in picks]
+    with open(RECENT_PATH, "w", encoding="utf-8") as f:
+        f.write("\n".join(keys[-RECENT_KEEP:]) + "\n")
+
+
 def pick_photos(slides, all_text, rnd, kind="daily"):
+    """場面ごとに写真を選ぶ。同じリールの中で重ならないように、
+    さらに最近のリールで使った写真もなるべく避ける（毎日同じ写真にならないように）"""
     used, picks = set(), []
+    recent = set(load_recent())
     post_themes = [t for t, rx in THEMES if re.search(rx, all_text)]
     for s in slides:
         txt = "".join(s)
@@ -264,14 +290,13 @@ def pick_photos(slides, all_text, rnd, kind="daily"):
         else:
             cands = [t for t, rx in THEMES if re.search(rx, txt)] + post_themes + DEFAULT_THEMES
         chosen = None
-        for t in cands:
-            pool = [p for p in list_photos(t) if p not in used]
-            # 自分の写真（own_）を優先
-            own = [p for p in pool if os.path.basename(p).startswith("own_")]
-            if own and rnd.random() < 0.7:
-                pool = own
-            if pool:
-                chosen = rnd.choice(pool)
+        for avoid_recent in (True, False):
+            for t in cands:
+                pool = [p for p in list_photos(t) if p not in used and not (avoid_recent and _key(p) in recent)]
+                if pool:
+                    chosen = rnd.choice(pool)
+                    break
+            if chosen:
                 break
         if not chosen:
             chosen = rnd.choice([p for t in DEFAULT_THEMES for p in list_photos(t)])
@@ -401,6 +426,7 @@ def build_scenes(text, rnd, kind="daily", title=None):
         title = {"tag": "指導員募集" if kind == "recruit" else "運転のコツ",
                  "title": "/".join(slides[0][:2]) if slides else "", "sub": ""}
     photos = pick_photos([lines for lines in [title["title"].split("/")]] + slides, text, rnd, kind)
+    photos_all = list(photos)
     scenes = []
     tag = "指導員募集" if kind == "recruit" else "運転のコツ"
     brand = label(f"ドライブプラス｜{tag}", size=36, bg=(255, 255, 255), fg=BLACK, pad=(24, 10))
@@ -423,7 +449,9 @@ def build_scenes(text, rnd, kind="daily", title=None):
 
     # 締め：ドライブプラスへの案内（人物の写真・名前は使わない）
     end_pool = [p for p in list_photos("lesson") + list_photos("road") if p not in photos]
-    end_photo = rnd.choice(end_pool)
+    fresh = [p for p in end_pool if _key(p) not in set(load_recent())]
+    end_photo = rnd.choice(fresh or end_pool)
+    LAST_PICKS[:] = list(photos_all) + [end_photo]
     ovs = [(brand, 50, 150, 0)]
     if kind == "recruit":
         head = ["教習指導員の資格、", "出張ペーパードライバー", "講習で活かしませんか？"]

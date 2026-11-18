@@ -225,6 +225,7 @@ def main():
     media_id = publish_reel(video, cap, token)
     log.append({"id": post["id"], "posted_at": now.strftime("%Y-%m-%d %H:%M"), "media_id": media_id, "kind": kind})
     write_log(log)
+    make_reel.save_recent(make_reel.LAST_PICKS)  # 次の日から、同じ写真をなるべく使わない
     print(f"投稿完了 media_id={media_id}")
 
 

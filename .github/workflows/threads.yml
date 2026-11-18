@@ -90,5 +90,5 @@ jobs:
       - name: 投稿記録を保存（インスタ）
         if: steps.tools.outcome == 'success'
         run: |
-          git add ig_log.csv 2>/dev/null || true
+          git add ig_log.csv reel_assets/recent_photos.txt 2>/dev/null || true
           git diff --cached --quiet || (git commit -m "インスタの投稿記録を更新" && git pull --rebase -q && git push)
