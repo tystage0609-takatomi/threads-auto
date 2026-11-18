@@ -4,7 +4,7 @@ on:
   schedule:
     - cron: "30 21 * * *"  # 毎日 6:30 JST（平日用）
     - cron: "0 0 * * *"    # 毎日 9:00 JST（土日祝用）
-    - cron: "0 8 * * 3"    # 毎週水曜 17:00 JST（指導員募集・2026-12-02から）
+    - cron: "0 8 * * 1,4"  # 毎週月・木 17:00 JST（指導員募集・2026-11-23から）
   workflow_dispatch:
     inputs:
       kind:
@@ -55,7 +55,7 @@ jobs:
             fi
           elif [ "${{ github.event.schedule }}" = "30 21 * * *" ]; then
             python post.py weekday
-          elif [ "${{ github.event.schedule }}" = "0 8 * * 3" ]; then
+          elif [ "${{ github.event.schedule }}" = "0 8 * * 1,4" ]; then
             python post.py recruit
           else
             python post.py weekend
@@ -81,7 +81,7 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             python ig_post.py "${{ inputs.post_id }}"
-          elif [ "${{ github.event.schedule }}" = "0 8 * * 3" ]; then
+          elif [ "${{ github.event.schedule }}" = "0 8 * * 1,4" ]; then
             python ig_post.py recruit
           else
             python ig_post.py

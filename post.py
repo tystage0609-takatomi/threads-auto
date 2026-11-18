@@ -72,11 +72,25 @@ def publish(text, token):
 
 
 RECRUIT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "recruit.csv")
-RECRUIT_START = datetime(2026, 12, 1, tzinfo=JST).date()
+RECRUIT_START = datetime(2026, 11, 23, tzinfo=JST).date()
+
+
+SEASON_MONTHS = (11, 12, 1, 2, 3)  # この月は、指導員募集に繁忙期の一文を自動で入れる
+SEASON_TEXT = "📅 4月の新年度に向けて練習したい人が増えるので、\n1月〜3月はペーパードライバー講習の繁忙期です。"
+
+
+def add_season(text, day):
+    """11月〜3月は「1月〜3月は繁忙期」の一文を「詳しくは」の前に入れる（繁忙期の投稿にはもう書いてあるので入れない）"""
+    if day.month not in SEASON_MONTHS or "繁忙期" in text:
+        return text
+    i = text.find("詳しくは")
+    if i < 0:
+        i = text.find("まずは")
+    return text[:i] + SEASON_TEXT + "\n\n" + text[i:] if i >= 0 else text
 
 
 def recruit(now, force=False):
-    """週1回の指導員募集の投稿。recruit.csv の中で、いちばん前に投稿したものから順に回す。"""
+    """週2回（月・木）の指導員募集の投稿。recruit.csv の中で、いちばん前に投稿したものから順に回す。"""
     today = now.date()
     if today < RECRUIT_START and not force:
         print(f"指導員募集の投稿は {RECRUIT_START} から開始のためスキップ")
@@ -87,7 +101,7 @@ def recruit(now, force=False):
         print("本日は募集を投稿済みのためスキップ")
         return
     post = min(rows, key=lambda r: (r.get("posted_at") or "", int(r["id"])))
-    text = post["text"].strip()
+    text = add_season(post["text"].strip(), today)
     print(f"指導員募集を投稿します (id={post['id']}):\n{text}\n")
     if os.environ.get("DRY_RUN") == "1":
         print("DRY_RUN のため実際には投稿していません")

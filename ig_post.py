@@ -23,6 +23,7 @@ from datetime import datetime, timedelta, timezone
 import requests
 
 import make_reel
+from post import add_season
 import tokens
 
 JST = timezone(timedelta(hours=9))
@@ -204,11 +205,15 @@ def main():
             if same:
                 print(f"id={post['id']} はインスタに投稿済みの id={same} とほぼ同じ内容のためスキップ（インスタはリピートしない）")
                 return
+        elif any(r["id"] == post["id"] and r.get("kind") == "recruit" for r in log):
+            print(f"指導員募集 id={post['id']} はインスタに投稿済みのためスキップ（インスタはリピートしない）")
+            return
 
     video = os.path.join(HERE, "reel.mp4")
     key = ("r" if kind == "recruit" else "") + post["id"]
     sec = make_reel.build(post["text"], video, seed=f"{kind}{post['id']}", kind=kind, title=make_reel.load_title(key))
-    cap = caption(post["text"], kind)
+    text = post["text"] if kind == "daily" else add_season(post["text"].strip(), now.date())
+    cap = caption(text, kind)
     print(f"動画を作りました（id={post['id']}、{sec:.1f}秒）\n--- 本文 ---\n{cap}\n------------")
 
     token = tokens.get("instagram", "INSTAGRAM_ACCESS_TOKEN")
