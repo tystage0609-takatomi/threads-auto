@@ -455,7 +455,7 @@ def build_scenes(text, rnd, kind="daily", title=None):
     ovs = [(brand, 50, 150, 0)]
     if kind == "recruit":
         head = ["教習指導員の資格、", "出張ペーパードライバー", "講習で活かしませんか？"]
-        sub, btn_text = "「集客のお手伝いをします」", "プロフィールのリンクからお問い合わせ ▶"
+        sub, btn_text = "「集客のお手伝いをします」", "プロフィールのリンクから応募 ▶"
     else:
         head = ["運転の不安、", "プロといっしょに", "解消しませんか？"]
         sub, btn_text = "「出張ペーパードライバー講習」", "プロフィールのリンクから ▶"
