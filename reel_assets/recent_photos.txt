@@ -3,3 +3,8 @@ mirror/c98263.jpg
 mirror/s127.jpg
 mirror/s128.jpg
 lesson/c02290.jpg
+city/s410.jpg
+city/s023.jpg
+city/own_car.jpg
+city/s011.jpg
+lesson/c56926.jpg
