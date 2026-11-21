@@ -8,3 +8,7 @@ city/s023.jpg
 city/own_car.jpg
 city/s011.jpg
 lesson/c56926.jpg
+keys/c09968.jpg
+keys/s312.jpg
+keys/c28185.jpg
+road/s342.jpg
