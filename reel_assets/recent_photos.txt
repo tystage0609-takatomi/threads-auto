@@ -12,3 +12,9 @@ keys/c09968.jpg
 keys/s312.jpg
 keys/c28185.jpg
 road/s342.jpg
+lesson/c88491.jpg
+lesson/own_lesson.jpg
+city/s400.jpg
+city/s413.jpg
+city/s007.jpg
+road/s244.jpg
