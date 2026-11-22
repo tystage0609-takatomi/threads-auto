@@ -77,7 +77,12 @@ def caption(text, kind="daily"):
         if has_note and ln.rstrip().endswith("👇"):
             ln = ln.rstrip()[:-1]
         # リンクと本人の名前・署名は入れない
-        if "http" in ln or "山田" in ln or "代表指導員" in ln:
+        if "http" in ln:
+            # 「ご相談は」「〜はnoteで」のように、リンクにつなぐだけの直前の行も消す
+            if lines and len(lines[-1].strip()) <= 30 and re.search(r"(は|noteで)$", lines[-1].strip()):
+                lines.pop()
+            continue
+        if "山田" in ln or "代表指導員" in ln:
             continue
         s = ln.strip()
         if s in ("詳しくはこちら", "詳しくはnoteで"):
@@ -90,6 +95,7 @@ def caption(text, kind="daily"):
     note = "📖 続きはnoteで\n「運転の裏教科書」と検索してください\n\n" if has_note else ""
     return (
         f"{body}\n\n"
+        "🔖 あとで見返せるように「保存」しておいてください\n\n"
         f"{note}"
         "ペーパードライバー講習のドライブプラス\n"
         "▶ くわしくはプロフィールのリンクから\n\n"
