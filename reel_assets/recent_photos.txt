@@ -25,3 +25,8 @@ crosswalk/c35232.jpg
 crosswalk/s000.jpg
 crosswalk/s023.jpg
 road/s186.jpg
+city/c49286.jpg
+road/s363.jpg
+road/c12886.jpg
+road/c15783.jpg
+road/s348.jpg
