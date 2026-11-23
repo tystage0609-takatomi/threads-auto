@@ -18,3 +18,10 @@ city/s400.jpg
 city/s413.jpg
 city/s007.jpg
 road/s244.jpg
+crosswalk/s271.jpg
+crosswalk/s266.jpg
+city/s000.jpg
+crosswalk/c35232.jpg
+crosswalk/s000.jpg
+crosswalk/s023.jpg
+road/s186.jpg
