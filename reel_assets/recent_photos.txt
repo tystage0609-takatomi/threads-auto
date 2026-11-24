@@ -37,3 +37,8 @@ parking/s101.jpg
 night/c88957.jpg
 parking/s110.jpg
 road/c16258.jpg
+drink/c38491.jpg
+drink/s318.jpg
+drink/c33477.jpg
+drink/c60701.jpg
+road/s193.jpg
