@@ -42,3 +42,8 @@ drink/s318.jpg
 drink/c33477.jpg
 drink/c60701.jpg
 road/s193.jpg
+keys/c18987.jpg
+keys/c03480.jpg
+keys/s309.jpg
+keys/c43225.jpg
+road/s184.jpg
