@@ -47,3 +47,10 @@ keys/c03480.jpg
 keys/s309.jpg
 keys/c43225.jpg
 road/s184.jpg
+interior/s151.jpg
+road/s237.jpg
+interior/c31841.jpg
+interior/s203.jpg
+interior/s194.jpg
+road/c49286.jpg
+lesson/c02290.jpg
