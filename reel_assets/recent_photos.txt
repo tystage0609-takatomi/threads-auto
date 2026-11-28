@@ -1,8 +1,3 @@
-mirror/s127.jpg
-mirror/s128.jpg
-lesson/c02290.jpg
-city/s410.jpg
-city/s023.jpg
 city/own_car.jpg
 city/s011.jpg
 lesson/c56926.jpg
@@ -58,3 +53,8 @@ meter/s076.jpg
 meter/s079.jpg
 meter/s073.jpg
 road/s237.jpg
+keys/c03948.jpg
+keys/c63738.jpg
+keys/s316.jpg
+city/s412.jpg
+lesson/own_lesson.jpg
